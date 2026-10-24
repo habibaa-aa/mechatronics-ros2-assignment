@@ -118,3 +118,49 @@ NOTES
     Start Turtlesim before launching the assignment nodes.
 
     The square side length must fit within the Turtlesim canvas to avoid reaching its boundaries.
+
+
+BONUS: ROS 2 Bag Recording and Playback
+
+    The rosbag bonus was completed by recording and replaying turtlesim topics using ROS 2 Jazzy.
+
+    Topics Recorded
+
+     `/turtle1/cmd_vel` — turtle velocity commands
+     `/turtle1/pose` — turtle position and orientation
+     `/turtle1/color_sensor` — turtle color sensor data
+
+    
+    Record a Demonstration
+
+        Start turtlesim and the assignment launch file in separate terminals. Then run:
+
+            cd ~/assignment_ws
+            mkdir -p rosbag_recordings
+            ros2 bag record -o rosbag_recordings/turtle_demo /turtle1/cmd_vel /turtle1/pose /turtle1/color_sensor
+  
+
+        While recording, run the square action in another terminal:
+
+            ros2 action send_goal /draw_square assignment_interfaces/action/DrawSquare "{side_length: 1.5}" --feedback
+   
+        Press `Ctrl+C` in the recording terminal to stop and save the recording.
+
+    
+    Inspect and Replay the Recording
+
+        Inspect the recorded topics and message counts:
+
+            ros2 bag info rosbag_recordings/turtle_demo
+
+        Replay the recording:
+
+            ros2 bag play rosbag_recordings/turtle_demo
+
+    
+    Recording Results
+
+    - Storage format: MCAP
+    - Duration: approximately 52 seconds
+    - Total messages: 6,642
+    - Recording and playback were tested successfully.
