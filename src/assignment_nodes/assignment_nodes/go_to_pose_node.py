@@ -13,6 +13,7 @@ from geometry_msgs.msg import Twist
 from turtlesim.msg import Pose
 from assignment_interfaces.action import GoToPose
 from assignment_interfaces.srv import SetSpeed
+from assignment_nodes.motion_strategy import MotionStrategy
 
 class GoToPoseNode(Node):
     def __init__(self):
@@ -31,6 +32,11 @@ class GoToPoseNode(Node):
            'max_angular_speed'
         ).value
 
+        self.motion_strategy = MotionStrategy(
+            self.max_linear_speed,
+            self.max_angular_speed
+        )
+        
         self.speed_service = self.create_service(
             SetSpeed,
             '/set_speed',
@@ -89,46 +95,12 @@ class GoToPoseNode(Node):
                     return result
 
                 pose = self.current_pose
-                dx = target.x - pose.x
-                dy = target.y - pose.y
-                distance = math.hypot(dx, dy)
+                cmd, distance, reached = self.motion_strategy.calculate_command(
+                    pose, target
+                )
 
-                cmd = Twist()
-
-                if distance >= 0.1:
-                    target_angle = math.atan2(dy, dx)
-                    angle_error = math.atan2(
-                        math.sin(target_angle - pose.theta),
-                        math.cos(target_angle - pose.theta)
-                    )
-
-                    if abs(angle_error) > 0.2:
-                        cmd.angular.z = max(
-                            -self.max_angular_speed,
-                        min(self.max_angular_speed, 6.0 * angle_error)
-                        )
-                    else:
-                        cmd.linear.x = min(
-                        1.5 * distance, self.max_linear_speed
-                        )
-                        cmd.angular.z = max(
-                            -self.max_angular_speed,
-                            min(self.max_angular_speed, 3.0 * angle_error)
-                        )
-
-                else:
-                    yaw_error = math.atan2(
-                        math.sin(target.yaw - pose.theta),
-                        math.cos(target.yaw - pose.theta)
-                    )
-
-                    if abs(yaw_error) < 0.05:
-                        break
-
-                    cmd.angular.z = max(
-                        -self.max_angular_speed,
-                        min(self.max_angular_speed, 4.0 * yaw_error)
-                    )       
+                if reached:
+                    break
 
                 feedback.distance_remaining = distance
                 goal_handle.publish_feedback(feedback)
@@ -163,6 +135,11 @@ class GoToPoseNode(Node):
         self.max_linear_speed = request.max_linear_speed
         self.max_angular_speed = request.max_angular_speed
 
+        self.motion_strategy.set_speed_limits(
+            self.max_linear_speed,
+            self.max_angular_speed
+        )
+        
         self.get_logger().info(
             f'Speed limits updated: linear={self.max_linear_speed}, '
             f'angular={self.max_angular_speed}'

@@ -164,3 +164,24 @@ BONUS: ROS 2 Bag Recording and Playback
     - Duration: approximately 52 seconds
     - Total messages: 6,642
     - Recording and playback were tested successfully.
+
+BONUS: Design Pattern  (Strategy Pattern)
+
+    I implemented the Strategy Pattern to separate turtle motion calculations from the goToPose action server.
+
+    motion_strategy.py
+        
+        Contains the MotionStrategy class, which calculates velocity commands based on the turtle's current pose and target pose. It also applies the maximum linear and angular speed limits.
+    
+    go_to_pose_node.py 
+      
+        Uses MotionStrategy to calculate movement commands while managing the ROS 2 action goal, feedback, cancellation, and result.
+        Speed updates:The /set_speed service updates the strategy's speed limits while the node is running.
+
+    Why I used it 
+       
+        Separating motion calculations from action handling makes the code easier to understand, test, maintain, and extend. Different motion strategies could be introduced in the future without rewriting the action server.
+
+    Testing 
+    
+        After implementing the pattern, I rebuilt the workspace and successfully tested both /goToPose and /draw_square. Both actions returned successful results, confirming that the refactor preserved their behavior.
