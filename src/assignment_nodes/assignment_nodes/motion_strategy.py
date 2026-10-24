@@ -1,13 +1,16 @@
 
+"""Motion strategy for moving Turtlesim toward a target pose."""
+
 import math
 
 from geometry_msgs.msg import Twist
 
 
 class MotionStrategy:
-    """Strategy for calculating velocity commands to reach a target pose."""
+    """Calculate velocity commands to reach a target pose."""
 
     def __init__(self, max_linear_speed=2.0, max_angular_speed=4.0):
+        """Initialize the maximum linear and angular speeds."""
         self.max_linear_speed = max_linear_speed
         self.max_angular_speed = max_angular_speed
 
@@ -17,7 +20,7 @@ class MotionStrategy:
         self.max_angular_speed = max_angular_speed
 
     def calculate_command(self, pose, target):
-        """Calculate the next velocity command from the current and target poses."""
+        """Calculate the next velocity command from the current pose."""
         dx = target.x - pose.x
         dy = target.y - pose.y
         distance = math.hypot(dx, dy)

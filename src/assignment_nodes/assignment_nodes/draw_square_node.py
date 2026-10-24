@@ -1,31 +1,34 @@
+"""Action server for drawing squares with Turtlesim."""
 
 import math
 import time
 
+from assignment_interfaces.action import DrawSquare, GoToPose
+
 import rclpy
-from rclpy.node import Node
-from rclpy.action import ActionServer, ActionClient
+from rclpy.action import ActionClient, ActionServer
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
-
-from assignment_interfaces.action import DrawSquare, GoToPose
+from rclpy.node import Node
 from std_srvs.srv import Empty
+from turtlesim.msg import Pose
 
 
 class DrawSquareNode(Node):
+    """Node that draws a square using the GoToPose action."""
+
     def __init__(self):
+        """Initialize the reset client and action servers."""
         super().__init__('draw_square_node')
 
         self.callback_group = ReentrantCallbackGroup()
 
-        # Client for resetting the turtle
         self.reset_client = self.create_client(
             Empty,
             '/reset_turtle',
             callback_group=self.callback_group
         )
 
-        # Client for asking the turtle to move to a target pose
         self.go_to_pose_client = ActionClient(
             self,
             GoToPose,
@@ -33,7 +36,6 @@ class DrawSquareNode(Node):
             callback_group=self.callback_group
         )
 
-        # Server that accepts square-drawing requests
         self.square_action_server = ActionServer(
             self,
             DrawSquare,
@@ -43,8 +45,9 @@ class DrawSquareNode(Node):
         )
 
         self.get_logger().info('DrawSquare action server is ready.')
-    
+
     def execute_callback(self, goal_handle):
+        """Reset the turtle and execute the four sides of a square."""
         self.get_logger().info('Received a DrawSquare goal.')
 
         side_length = goal_handle.request.side_length
@@ -57,7 +60,6 @@ class DrawSquareNode(Node):
             result.message = 'Side length must be greater than zero.'
             return result
 
-        # Wait for the reset service and movement action
         if not self.reset_client.wait_for_service(timeout_sec=5.0):
             goal_handle.abort()
             result.success = False
@@ -70,7 +72,6 @@ class DrawSquareNode(Node):
             result.message = 'GoToPose action server is unavailable.'
             return result
 
-        # Reset the turtle and clear its drawing
         reset_future = self.reset_client.call_async(Empty.Request())
         while rclpy.ok() and not reset_future.done():
             time.sleep(0.05)
@@ -81,19 +82,17 @@ class DrawSquareNode(Node):
             result.message = 'Failed to reset the turtle.'
             return result
 
-        # Read the starting pose after the reset
         pose = self.get_turtle_pose()
         if pose is None:
             goal_handle.abort()
             result.success = False
             result.message = 'Could not read the turtle pose.'
             return result
-        
+
         current_x = pose.x
         current_y = pose.y
         current_yaw = pose.theta
 
-        # Draw four sides, turning 90 degrees after each side
         for side in range(4):
             if goal_handle.is_cancel_requested:
                 goal_handle.canceled()
@@ -104,11 +103,15 @@ class DrawSquareNode(Node):
             feedback.current_side = side + 1
             goal_handle.publish_feedback(feedback)
 
-            target_x = current_x + side_length * math.cos(current_yaw)
-            target_y = current_y + side_length * math.sin(current_yaw)
+            target_x = (
+                current_x + side_length * math.cos(current_yaw)
+            )
+            target_y = (
+                current_y + side_length * math.sin(current_yaw)
+            )
             target_yaw = current_yaw + math.pi / 2.0
 
-            # Keep the target inside the turtlesim canvas
+            # Keep the target inside the Turtlesim canvas.
             target_x = max(0.5, min(10.5, target_x))
             target_y = max(0.5, min(10.5, target_y))
 
@@ -122,7 +125,10 @@ class DrawSquareNode(Node):
                 time.sleep(0.05)
 
             goal_handle_pose = goal_future.result()
-            if goal_handle_pose is None or not goal_handle_pose.accepted:
+            if (
+                goal_handle_pose is None
+                or not goal_handle_pose.accepted
+            ):
                 goal_handle.abort()
                 result.success = False
                 result.message = f'Failed to start side {side + 1}.'
@@ -133,16 +139,19 @@ class DrawSquareNode(Node):
                 time.sleep(0.05)
 
             movement_result = result_future.result()
-            if movement_result is None or not movement_result.result.success:
+            if (
+                movement_result is None
+                or not movement_result.result.success
+            ):
                 goal_handle.abort()
                 result.success = False
                 result.message = f'Failed to complete side {side + 1}.'
                 return result
-            
+
             current_x = target_x
             current_y = target_y
             current_yaw = target_yaw
-            
+
         result.success = True
         result.message = 'Square drawn successfully.'
         goal_handle.succeed()
@@ -150,9 +159,7 @@ class DrawSquareNode(Node):
         return result
 
     def get_turtle_pose(self):
-        from turtlesim.msg import Pose
-
-        # Subscribe temporarily and wait for a pose update
+        """Subscribe temporarily and return the latest turtle pose."""
         pose_holder = {'pose': None}
 
         subscription = self.create_subscription(
@@ -174,6 +181,7 @@ class DrawSquareNode(Node):
 
 
 def main(args=None):
+    """Start the square-drawing node and its executor."""
     rclpy.init(args=args)
     node = DrawSquareNode()
 

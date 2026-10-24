@@ -1,42 +1,46 @@
+"""Action server for moving the Turtlesim turtle to a target pose."""
 
-import math
 import time
 
-import rclpy
-from rclpy.node import Node
-from rclpy.action import ActionServer
-from rclpy.callback_groups import ReentrantCallbackGroup
-from rclpy.executors import MultiThreadedExecutor
-
-
-from geometry_msgs.msg import Twist
-from turtlesim.msg import Pose
 from assignment_interfaces.action import GoToPose
 from assignment_interfaces.srv import SetSpeed
 from assignment_nodes.motion_strategy import MotionStrategy
+from geometry_msgs.msg import Twist
+
+import rclpy
+from rclpy.action import ActionServer
+from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
+from rclpy.node import Node
+from rclpy.parameter import Parameter
+from turtlesim.msg import Pose
+
 
 class GoToPoseNode(Node):
+    """Node providing the goToPose action and speed service."""
+
     def __init__(self):
+        """Initialize publishers, subscribers, and servers."""
         super().__init__('go_to_pose_node')
 
-        self.current_pose = None 
-        
+        self.current_pose = None
+
         self.declare_parameter('max_linear_speed', 2.0)
         self.declare_parameter('max_angular_speed', 4.0)
 
         self.max_linear_speed = self.get_parameter(
             'max_linear_speed'
-        )  .value
+        ).value
 
         self.max_angular_speed = self.get_parameter(
-           'max_angular_speed'
+            'max_angular_speed'
         ).value
 
         self.motion_strategy = MotionStrategy(
             self.max_linear_speed,
             self.max_angular_speed
         )
-        
+
         self.speed_service = self.create_service(
             SetSpeed,
             '/set_speed',
@@ -69,9 +73,11 @@ class GoToPoseNode(Node):
         self.get_logger().info('goToPose action server is ready.')
 
     def pose_callback(self, msg):
+        """Store the turtle's latest pose."""
         self.current_pose = msg
 
     def execute_callback(self, goal_handle):
+        """Move the turtle toward the requested target pose."""
         self.get_logger().info('Received a goToPose goal.')
 
         target = goal_handle.request.target
@@ -85,6 +91,7 @@ class GoToPoseNode(Node):
                     result.success = False
                     result.message = 'Goal canceled.'
                     return result
+
                 time.sleep(0.05)
 
             while rclpy.ok():
@@ -95,8 +102,23 @@ class GoToPoseNode(Node):
                     return result
 
                 pose = self.current_pose
-                cmd, distance, reached = self.motion_strategy.calculate_command(
-                    pose, target
+
+                # Read the latest speed parameters on every control cycle.
+                self.max_linear_speed = self.get_parameter(
+                    'max_linear_speed'
+                ).value
+                self.max_angular_speed = self.get_parameter(
+                    'max_angular_speed'
+                ).value
+
+                # Apply the latest limits to the motion strategy.
+                self.motion_strategy.set_speed_limits(
+                    self.max_linear_speed,
+                    self.max_angular_speed
+                )
+
+                cmd, distance, reached = (
+                    self.motion_strategy.calculate_command(pose, target)
                 )
 
                 if reached:
@@ -122,6 +144,7 @@ class GoToPoseNode(Node):
             self.cmd_vel_publisher.publish(Twist())
 
     def set_speed_callback(self, request, response):
+        """Validate and update the linear and angular speed limits."""
         if request.max_linear_speed <= 0.0:
             response.success = False
             response.message = 'Linear speed must be greater than zero.'
@@ -132,6 +155,23 @@ class GoToPoseNode(Node):
             response.message = 'Angular speed must be greater than zero.'
             return response
 
+        # Update ROS parameters as well as the internal speed limits.
+        parameter_results = self.set_parameters([
+            Parameter(
+                'max_linear_speed',
+                value=request.max_linear_speed
+            ),
+            Parameter(
+                'max_angular_speed',
+                value=request.max_angular_speed
+            )
+        ])
+
+        if not all(result.successful for result in parameter_results):
+            response.success = False
+            response.message = 'Failed to update speed parameters.'
+            return response
+
         self.max_linear_speed = request.max_linear_speed
         self.max_angular_speed = request.max_angular_speed
 
@@ -139,7 +179,7 @@ class GoToPoseNode(Node):
             self.max_linear_speed,
             self.max_angular_speed
         )
-        
+
         self.get_logger().info(
             f'Speed limits updated: linear={self.max_linear_speed}, '
             f'angular={self.max_angular_speed}'
@@ -149,7 +189,9 @@ class GoToPoseNode(Node):
         response.message = 'Speed limits updated successfully.'
         return response
 
+
 def main(args=None):
+    """Start the movement node and its executor."""
     rclpy.init(args=args)
     node = GoToPoseNode()
 

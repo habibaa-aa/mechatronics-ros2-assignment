@@ -1,4 +1,6 @@
 
+"""Service node for resetting the Turtlesim turtle."""
+
 import rclpy
 from rclpy.node import Node
 from std_srvs.srv import Empty
@@ -6,7 +8,10 @@ from turtlesim.srv import TeleportAbsolute
 
 
 class ResetNode(Node):
+    """Provide a service to reset the turtle's drawing and position."""
+
     def __init__(self):
+        """Initialize the reset and teleport clients and service."""
         super().__init__('reset_node')
 
         self.reset_client = self.create_client(Empty, '/reset')
@@ -21,6 +26,7 @@ class ResetNode(Node):
         self.get_logger().info('Reset service is ready.')
 
     def reset_callback(self, request, response):
+        """Clear the drawing and begin resetting the turtle."""
         self.get_logger().info('Reset requested.')
 
         if not self.reset_client.service_is_ready():
@@ -33,6 +39,7 @@ class ResetNode(Node):
         return response
 
     def reset_finished(self, future):
+        """Handle the result of clearing the Turtlesim drawing."""
         try:
             result = future.result()
         except Exception as error:
@@ -58,6 +65,7 @@ class ResetNode(Node):
         future.add_done_callback(self.teleport_finished)
 
     def teleport_finished(self, future):
+        """Handle the result of teleporting the turtle to its start."""
         try:
             result = future.result()
         except Exception as error:
@@ -75,6 +83,7 @@ class ResetNode(Node):
 
 
 def main(args=None):
+    """Initialize and run the reset node."""
     rclpy.init(args=args)
     node = ResetNode()
 

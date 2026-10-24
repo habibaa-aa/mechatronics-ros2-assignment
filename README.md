@@ -1,187 +1,215 @@
-                                                                ROS 2 MECHATRONICS ASSIGNMENT
-OVERVIEW
+# ROS 2 Mechatronics Assignment
 
-    This project implements a turtle-control system using ROS 2 Jazzy and Turtlesim for the Design of Mechatronics Systems laboratory assignment at Alexandria University, Faculty of Engineering.
+**Course:** Design of Mechatronics Systems — Lab 1  
+**University:** Alexandria University, Faculty of Engineering  
+**ROS 2 Distribution:** Jazzy
 
-    The system demonstrates custom ROS 2 interfaces, services, actions, configurable speed limits, and launch files.
+## Team Members
 
-REQUIREMENTS
-    
-    Ubuntu Linux
-    ROS 2 Jazzy
-    Turtlesim
-    Python 3
-    colcon build tools
+- Habiba Amr Mostafa — ID: 9590
+- Habiba Mohammed Hassan — ID: 9435
 
+## Overview
 
-WORKSPACE STRUCTURE
+This project implements a turtle-control system using ROS 2 Jazzy and Turtlesim. It demonstrates custom ROS 2 interfaces, services, actions, configurable speed limits, launch files, rosbag recording and playback, and the Strategy design pattern.
 
-    assignment_ws/
-    ├── README.md
-    └── src/
-        ├── assignment_interfaces/
-        │   ├── action/
-        │   │   ├── DrawSquare.action
-        │   │   └── GoToPose.action
-        │   ├── msg/
-        │   │   └── TargetPose.msg
-        │   ├── srv/
-        │   │   └── SetSpeed.srv
-        │   ├── CMakeLists.txt
-        │   └── package.xml
-        └── assignment_nodes/
-            ├── assignment_nodes/
-            │   ├── reset_node.py
-            │   ├── go_to_pose_node.py
-            │   └── draw_square_node.py
-            ├── launch/
-            │   └── assignment.launch.py
-            ├── package.xml
-            └── setup.py
+## Requirements
 
+- Ubuntu Linux
+- ROS 2 Jazzy
+- Turtlesim
+- Python 3
+- `colcon` build tools
 
-IMPLEMENTED FEATURES
+## Workspace Structure
 
-    R1 — Turtlesim
-        Runs the Turtlesim simulation.
+```text
+assignment_ws/
+├── README.md
+└── src/
+    ├── assignment_interfaces/
+    │   ├── action/
+    │   │   ├── DrawSquare.action
+    │   │   └── GoToPose.action
+    │   ├── msg/
+    │   │   └── TargetPose.msg
+    │   ├── srv/
+    │   │   └── SetSpeed.srv
+    │   ├── CMakeLists.txt
+    │   └── package.xml
+    └── assignment_nodes/
+        ├── assignment_nodes/
+        │   ├── reset_node.py
+        │   ├── go_to_pose_node.py
+        │   ├── draw_square_node.py
+        │   └── motion_strategy.py
+        ├── launch/
+        │   └── assignment.launch.py
+        ├── package.xml
+        ├── setup.py
+        └── setup.cfg
+```
 
-    R2 — Custom Interfaces
-        Defines:
-            TargetPose.msg: target x, y, and yaw.
-            GoToPose.action: moves the turtle to a target pose and reports feedback and a result.
-            DrawSquare.action: requests square drawing and reports the current side.
-            SetSpeed.srv: changes the maximum linear and angular speeds.
+## Implemented Requirements
 
-    R3 — GoToPose Action Server
-        Receives a target pose, controls the turtle's linear and angular velocities, and reports movement feedback and completion status.
+### R1 — Turtlesim
 
-    R4 — Reset Service
-        Provides /reset_turtle to clear the drawing and return the turtle to its starting position.
+The launch file starts the Turtlesim simulation.
 
-    R5 — DrawSquare Action Server
-        Provides /draw_square. It resets the turtle and uses the goToPose action to draw four sides.
+### R2 — Custom Interfaces
 
-    R6 — Launch File
-        The assignment.launch.py file starts the reset, movement, and square-drawing nodes together.
+The `assignment_interfaces` package defines:
 
-    R7 — Configurable Speed Limits
-        The movement node provides max_linear_speed and max_angular_speed parameters and a /set_speed service to update the limits while running.
+- `TargetPose.msg`: target position (`x`, `y`) and orientation (`yaw`).
+- `GoToPose.action`: requests movement to a target pose and reports feedback and a result.
+- `DrawSquare.action`: requests square drawing and reports the current side.
+- `SetSpeed.srv`: requests updates to maximum linear and angular speeds.
 
-    R8 — Package Organization
-        Separates custom interface definitions from Python nodes into two ROS 2 packages.
+### R3 — GoToPose Action Server
 
+The `/goToPose` action server receives a target pose, controls the turtle's linear and angular velocities, publishes feedback, and reports completion.
 
-BUILD INSTRUCTIONS
+### R4 — Reset Service
 
-    Open a terminal and run:
+The `/reset_turtle` service clears the drawing and returns the turtle to its starting position by calling Turtlesim services.
 
-        cd ~/assignment_ws
-        source /opt/ros/jazzy/setup.bash
-        colcon build --packages-up-to assignment_nodes
-        source ~/assignment_ws/install/setup.bash
+### R5 — DrawSquare Action Server
 
+The `/draw_square` action server resets the turtle and uses the `/goToPose` action four times to draw a square.
 
-RUN INSTRUCTIONS
-    1. Start Turtlesim
-        In a regular Ubuntu terminal:
-            source /opt/ros/jazzy/setup.bash
-            ros2 run turtlesim turtlesim_node
+### R6 — Launch File
 
-    2. Start the assignment nodes
-        In another terminal:
-            source /opt/ros/jazzy/setup.bash
-            source ~/assignment_ws/install/setup.bash
-            ros2 launch assignment_nodes assignment.launch.py
+The `assignment.launch.py` file starts Turtlesim and all three assignment nodes together.
 
-EXAMPLE COMMANDS
+### R7 — Configurable Speed Limits
 
-    Draw a square
+The movement node declares `max_linear_speed` and `max_angular_speed` parameters. The `/set_speed` service updates both limits while the system is running. Invalid non-positive speed values are rejected.
 
-        ros2 action send_goal /draw_square assignment_interfaces/action/DrawSquare "{side_length: 1.5}" --feedback
+### R8 — Package Organization
 
-    Reset the turtle
+The project separates interface definitions in `assignment_interfaces` from executable Python nodes in `assignment_nodes`.
 
-        ros2 service call /reset_turtle std_srvs/srv/Empty "{}"
+## Build Instructions
 
-    Change the speed limits
+Open a terminal and run:
 
-        ros2 service call /set_speed assignment_interfaces/srv/SetSpeed "{max_linear_speed: 1.0, max_angular_speed: 2.0}"
+```bash
+cd ~/assignment_ws
+source /opt/ros/jazzy/setup.bash
+colcon build --packages-up-to assignment_nodes
+source ~/assignment_ws/install/setup.bash
+```
 
-    Move to a target pose
+## Run the Assignment
 
-        ros2 action send_goal /goToPose assignment_interfaces/action/GoToPose "{target: {x: 8.0, y: 8.0, yaw: 0.0}}" --feedback
+Start the complete system with one command:
 
-NOTES
+```bash
+source /opt/ros/jazzy/setup.bash
+source ~/assignment_ws/install/setup.bash
+ros2 launch assignment_nodes assignment.launch.py
+```
 
-    Source the ROS 2 Jazzy setup file and workspace setup file in each new terminal before running assignment commands.
+This launches Turtlesim, the reset service node, the movement action server, and the square action server.
 
-    Start Turtlesim before launching the assignment nodes.
+Keep this terminal running. Open another terminal for the example commands below, sourcing the ROS 2 and workspace setup files first:
 
-    The square side length must fit within the Turtlesim canvas to avoid reaching its boundaries.
+```bash
+source /opt/ros/jazzy/setup.bash
+source ~/assignment_ws/install/setup.bash
+```
 
+## Example Commands
 
-BONUS: ROS 2 Bag Recording and Playback
+### Move to a Target Pose
 
-    The rosbag bonus was completed by recording and replaying turtlesim topics using ROS 2 Jazzy.
+```bash
+ros2 action send_goal /goToPose assignment_interfaces/action/GoToPose "{target: {x: 8.0, y: 8.0, yaw: 0.0}}" --feedback
+```
 
-    Topics Recorded
+### Draw a Square
 
-     `/turtle1/cmd_vel` — turtle velocity commands
-     `/turtle1/pose` — turtle position and orientation
-     `/turtle1/color_sensor` — turtle color sensor data
+```bash
+ros2 action send_goal /draw_square assignment_interfaces/action/DrawSquare "{side_length: 1.5}" --feedback
+```
 
-    
-    Record a Demonstration
+### Reset the Turtle
 
-        Start turtlesim and the assignment launch file in separate terminals. Then run:
+```bash
+ros2 service call /reset_turtle std_srvs/srv/Empty "{}"
+```
 
-            cd ~/assignment_ws
-            mkdir -p rosbag_recordings
-            ros2 bag record -o rosbag_recordings/turtle_demo /turtle1/cmd_vel /turtle1/pose /turtle1/color_sensor
-  
+### Change Speed Limits
 
-        While recording, run the square action in another terminal:
+```bash
+ros2 service call /set_speed assignment_interfaces/srv/SetSpeed "{max_linear_speed: 1.0, max_angular_speed: 2.0}"
+```
 
-            ros2 action send_goal /draw_square assignment_interfaces/action/DrawSquare "{side_length: 1.5}" --feedback
-   
-        Press `Ctrl+C` in the recording terminal to stop and save the recording.
+### Inspect Speed Parameters
 
-    
-    Inspect and Replay the Recording
+```bash
+ros2 param get /go_to_pose_node max_linear_speed
+ros2 param get /go_to_pose_node max_angular_speed
+```
 
-        Inspect the recorded topics and message counts:
+The speed service rejects values less than or equal to zero.
 
-            ros2 bag info rosbag_recordings/turtle_demo
+## Notes
 
-        Replay the recording:
+- Source both the ROS 2 Jazzy setup file and the workspace setup file in every new terminal before running assignment commands.
+- The launch file starts Turtlesim automatically; do not start a second Turtlesim instance.
+- Choose a square side length that fits within the Turtlesim canvas.
 
-            ros2 bag play rosbag_recordings/turtle_demo
+## Bonus 1 — ROS 2 Bag Recording and Playback
 
-    
-    Recording Results
+The rosbag bonus was completed by recording and replaying Turtlesim topics.
 
-    - Storage format: MCAP
-    - Duration: approximately 52 seconds
-    - Total messages: 6,642
-    - Recording and playback were tested successfully.
+### Topics Recorded
 
-BONUS: Design Pattern  (Strategy Pattern)
+- `/turtle1/cmd_vel` — turtle velocity commands
+- `/turtle1/pose` — turtle position and orientation
+- `/turtle1/color_sensor` — turtle color sensor data
 
-    I implemented the Strategy Pattern to separate turtle motion calculations from the goToPose action server.
+### Record a Demonstration
 
-    motion_strategy.py
-        
-        Contains the MotionStrategy class, which calculates velocity commands based on the turtle's current pose and target pose. It also applies the maximum linear and angular speed limits.
-    
-    go_to_pose_node.py 
-      
-        Uses MotionStrategy to calculate movement commands while managing the ROS 2 action goal, feedback, cancellation, and result.
-        Speed updates:The /set_speed service updates the strategy's speed limits while the node is running.
+With the assignment launch file running, open another terminal and run:
 
-    Why I used it 
-       
-        Separating motion calculations from action handling makes the code easier to understand, test, maintain, and extend. Different motion strategies could be introduced in the future without rewriting the action server.
+```bash
+cd ~/assignment_ws
+mkdir -p rosbag_recordings
+ros2 bag record -o rosbag_recordings/turtle_demo /turtle1/cmd_vel /turtle1/pose /turtle1/color_sensor
+```
 
-    Testing 
-    
-        After implementing the pattern, I rebuilt the workspace and successfully tested both /goToPose and /draw_square. Both actions returned successful results, confirming that the refactor preserved their behavior.
+While recording, run the square action in another terminal:
+
+```bash
+ros2 action send_goal /draw_square assignment_interfaces/action/DrawSquare "{side_length: 1.5}" --feedback
+```
+
+Press `Ctrl+C` in the recording terminal to stop recording and save the bag.
+
+### Inspect and Replay
+
+```bash
+ros2 bag info rosbag_recordings/turtle_demo
+ros2 bag play rosbag_recordings/turtle_demo
+```
+
+### Recording Results
+
+- Storage format: MCAP
+- Duration: approximately 52 seconds
+- Total messages: 6,642
+- Recording and playback were tested successfully.
+
+## Bonus 2 — Strategy Design Pattern
+
+The Strategy Pattern separates turtle motion calculations from the `/goToPose` action server.
+
+- **`motion_strategy.py`:** Implements `MotionStrategy`, which calculates velocity commands using the current pose, target pose, and speed limits.
+- **`go_to_pose_node.py`:** Uses the strategy while managing the ROS 2 action goal, feedback, cancellation, and result.
+- **Live speed updates:** The `/set_speed` service updates the node parameters and the strategy's speed limits while the node is running.
+
+This separation makes the code easier to understand, test, maintain, and extend. Alternative movement strategies could be added without rewriting the action server.
+
+**Testing:** Both `/goToPose` and `/draw_square` were tested successfully after the refactor.
