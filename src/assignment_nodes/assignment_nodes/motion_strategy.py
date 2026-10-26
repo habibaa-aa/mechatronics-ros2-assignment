@@ -9,6 +9,10 @@ from geometry_msgs.msg import Twist
 class MotionStrategy:
     """Calculate velocity commands to reach a target pose."""
 
+    POSITION_TOLERANCE = 0.03
+    ANGLE_TOLERANCE = 0.03
+    TURN_THRESHOLD = 0.15
+
     def __init__(self, max_linear_speed=2.0, max_angular_speed=4.0):
         """Initialize the maximum linear and angular speeds."""
         self.max_linear_speed = max_linear_speed
@@ -19,48 +23,63 @@ class MotionStrategy:
         self.max_linear_speed = max_linear_speed
         self.max_angular_speed = max_angular_speed
 
+    @staticmethod
+    def normalize_angle(angle):
+        """Return an angle in the range [-pi, pi]."""
+        return math.atan2(math.sin(angle), math.cos(angle))
+
     def calculate_command(self, pose, target):
-        """Calculate the next velocity command from the current pose."""
+        """Calculate velocity and report completion only near the target pose."""
+        cmd = Twist()
+
         dx = target.x - pose.x
         dy = target.y - pose.y
         distance = math.hypot(dx, dy)
 
-        cmd = Twist()
+        yaw_error = self.normalize_angle(target.yaw - pose.theta)
 
-        if distance >= 0.1:
+        # A target is complete only when position and heading both match.
+        if (
+            distance <= self.POSITION_TOLERANCE
+            and abs(yaw_error) <= self.ANGLE_TOLERANCE
+        ):
+            return cmd, distance, True
+
+        # First align with the direction of travel.
+        if distance > self.POSITION_TOLERANCE:
             target_angle = math.atan2(dy, dx)
-            angle_error = math.atan2(
-                math.sin(target_angle - pose.theta),
-                math.cos(target_angle - pose.theta)
+            angle_error = self.normalize_angle(
+                target_angle - pose.theta
             )
 
-            if abs(angle_error) > 0.2:
+            if abs(angle_error) > self.TURN_THRESHOLD:
                 cmd.angular.z = max(
                     -self.max_angular_speed,
-                    min(self.max_angular_speed, 6.0 * angle_error)
+                    min(
+                        self.max_angular_speed,
+                        4.0 * angle_error
+                    )
                 )
             else:
                 cmd.linear.x = min(
-                    1.5 * distance, self.max_linear_speed
+                    1.2 * distance,
+                    self.max_linear_speed
                 )
                 cmd.angular.z = max(
                     -self.max_angular_speed,
-                    min(self.max_angular_speed, 3.0 * angle_error)
+                    min(
+                        self.max_angular_speed,
+                        2.0 * angle_error
+                    )
                 )
         else:
-            yaw_error = math.atan2(
-                math.sin(target.yaw - pose.theta),
-                math.cos(target.yaw - pose.theta)
-            )
-
-            reached = abs(yaw_error) < 0.05
-
-            if not reached:
-                cmd.angular.z = max(
-                    -self.max_angular_speed,
-                    min(self.max_angular_speed, 4.0 * yaw_error)
+            # At the target position: rotate to the requested heading.
+            cmd.angular.z = max(
+                -self.max_angular_speed,
+                min(
+                    self.max_angular_speed,
+                    4.0 * yaw_error
                 )
-
-            return cmd, distance, reached
+            )
 
         return cmd, distance, False

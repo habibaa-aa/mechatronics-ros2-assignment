@@ -1,10 +1,11 @@
+
 """Action server for drawing squares with Turtlesim."""
 
 import math
+import threading
 import time
 
 from assignment_interfaces.action import DrawSquare, GoToPose
-
 import rclpy
 from rclpy.action import ActionClient, ActionServer
 from rclpy.callback_groups import ReentrantCallbackGroup
@@ -15,13 +16,23 @@ from turtlesim.msg import Pose
 
 
 class DrawSquareNode(Node):
-    """Node that draws a square using the GoToPose action."""
+    """Draw a square using fixed corner targets."""
 
     def __init__(self):
-        """Initialize the reset client and action servers."""
+        """Initialize clients, subscriber, and action server."""
         super().__init__('draw_square_node')
 
         self.callback_group = ReentrantCallbackGroup()
+        self.current_pose = None
+        self.pose_count = 0
+
+        self.pose_subscriber = self.create_subscription(
+            Pose,
+            '/turtle1/pose',
+            self.pose_callback,
+            10,
+            callback_group=self.callback_group
+        )
 
         self.reset_client = self.create_client(
             Empty,
@@ -46,18 +57,74 @@ class DrawSquareNode(Node):
 
         self.get_logger().info('DrawSquare action server is ready.')
 
+    def pose_callback(self, msg):
+        """Store each newly received turtle pose."""
+        self.current_pose = msg
+        self.pose_count += 1
+
+    def wait_for_new_pose(self, previous_count, timeout=3.0):
+        """Wait until a newer turtle pose arrives."""
+        deadline = time.monotonic() + timeout
+
+        while rclpy.ok() and time.monotonic() < deadline:
+            if self.pose_count > previous_count:
+                return self.current_pose
+
+            time.sleep(0.02)
+
+        return None
+
+    def wait_for_target_pose(self, target, timeout=3.0):
+        """Wait until the measured pose is close to the target."""
+        deadline = time.monotonic() + timeout
+        previous_count = self.pose_count
+
+        while rclpy.ok() and time.monotonic() < deadline:
+            pose = self.wait_for_new_pose(
+                previous_count,
+                timeout=0.2
+            )
+
+            if pose is None:
+                continue
+
+            previous_count = self.pose_count
+
+            distance = math.hypot(
+                target.x - pose.x,
+                target.y - pose.y
+            )
+
+            # Turtlesim Pose uses theta, not yaw.
+            yaw_error = math.atan2(
+                math.sin(target.theta - pose.theta),
+                math.cos(target.theta - pose.theta)
+            )
+
+            if distance <= 0.06 and abs(yaw_error) <= 0.06:
+                return pose
+
+        return None
+
+    @staticmethod
+    def wait_for_future(future, timeout=30.0):
+        """Wait for an asynchronous operation to finish."""
+        finished = threading.Event()
+        future.add_done_callback(lambda _: finished.set())
+        return finished.wait(timeout)
+
     def execute_callback(self, goal_handle):
-        """Reset the turtle and execute the four sides of a square."""
-        self.get_logger().info('Received a DrawSquare goal.')
-
-        side_length = goal_handle.request.side_length
-        feedback = DrawSquare.Feedback()
+        """Reset the turtle and draw four geometrically fixed sides."""
         result = DrawSquare.Result()
+        feedback = DrawSquare.Feedback()
+        side_length = goal_handle.request.side_length
 
-        if side_length <= 0.0:
+        if not math.isfinite(side_length) or side_length <= 0.0:
             goal_handle.abort()
             result.success = False
-            result.message = 'Side length must be greater than zero.'
+            result.message = (
+                'Side length must be a finite positive number.'
+            )
             return result
 
         if not self.reset_client.wait_for_service(timeout_sec=5.0):
@@ -66,34 +133,94 @@ class DrawSquareNode(Node):
             result.message = 'Reset service is unavailable.'
             return result
 
-        if not self.go_to_pose_client.wait_for_server(timeout_sec=5.0):
+        if not self.go_to_pose_client.wait_for_server(
+            timeout_sec=5.0
+        ):
             goal_handle.abort()
             result.success = False
             result.message = 'GoToPose action server is unavailable.'
             return result
 
+        pose_count_before_reset = self.pose_count
         reset_future = self.reset_client.call_async(Empty.Request())
-        while rclpy.ok() and not reset_future.done():
-            time.sleep(0.05)
 
-        if reset_future.result() is None:
+        if not self.wait_for_future(reset_future, timeout=10.0):
             goal_handle.abort()
             result.success = False
-            result.message = 'Failed to reset the turtle.'
+            result.message = 'Reset service timed out.'
             return result
 
-        pose = self.get_turtle_pose()
-        if pose is None:
+        try:
+            reset_future.result()
+        except Exception as error:
             goal_handle.abort()
             result.success = False
-            result.message = 'Could not read the turtle pose.'
+            result.message = f'Reset failed: {error}'
             return result
 
-        current_x = pose.x
-        current_y = pose.y
-        current_yaw = pose.theta
+        start_pose = self.wait_for_new_pose(
+            pose_count_before_reset,
+            timeout=3.0
+        )
 
-        for side in range(4):
+        if start_pose is None:
+            goal_handle.abort()
+            result.success = False
+            result.message = 'No fresh turtle pose received after reset.'
+            return result
+
+        start_x = start_pose.x
+        start_y = start_pose.y
+        start_yaw = start_pose.theta
+
+        # Calculate every corner from the same starting pose.
+        unit_x = math.cos(start_yaw)
+        unit_y = math.sin(start_yaw)
+
+        perpendicular_x = math.cos(start_yaw + math.pi / 2.0)
+        perpendicular_y = math.sin(start_yaw + math.pi / 2.0)
+
+        corners = [
+            (
+                start_x + side_length * unit_x,
+                start_y + side_length * unit_y
+            ),
+            (
+                start_x + side_length * (unit_x + perpendicular_x),
+                start_y + side_length * (unit_y + perpendicular_y)
+            ),
+            (
+                start_x + side_length * perpendicular_x,
+                start_y + side_length * perpendicular_y
+            ),
+            (start_x, start_y)
+        ]
+
+        targets = []
+
+        for side, (target_x, target_y) in enumerate(corners):
+            target_yaw = start_yaw + (side + 1) * math.pi / 2.0
+            targets.append((target_x, target_y, target_yaw))
+
+        # Check that all corners stay inside the safe canvas area.
+        margin = 0.5
+
+        for target_x, target_y, _ in targets:
+            if not (
+                margin <= target_x <= 11.0 - margin
+                and margin <= target_y <= 11.0 - margin
+            ):
+                goal_handle.abort()
+                result.success = False
+                result.message = (
+                    'Square is too large for the safe canvas area.'
+                )
+                return result
+
+        # Move to each corner in sequence.
+        for side, (target_x, target_y, target_yaw) in enumerate(
+            targets
+        ):
             if goal_handle.is_cancel_requested:
                 goal_handle.canceled()
                 result.success = False
@@ -103,81 +230,84 @@ class DrawSquareNode(Node):
             feedback.current_side = side + 1
             goal_handle.publish_feedback(feedback)
 
-            target_x = (
-                current_x + side_length * math.cos(current_yaw)
-            )
-            target_y = (
-                current_y + side_length * math.sin(current_yaw)
-            )
-            target_yaw = current_yaw + math.pi / 2.0
-
-            # Keep the target inside the Turtlesim canvas.
-            target_x = max(0.5, min(10.5, target_x))
-            target_y = max(0.5, min(10.5, target_y))
-
             goal = GoToPose.Goal()
             goal.target.x = target_x
             goal.target.y = target_y
             goal.target.yaw = target_yaw
 
-            goal_future = self.go_to_pose_client.send_goal_async(goal)
-            while rclpy.ok() and not goal_future.done():
-                time.sleep(0.05)
+            goal_future = self.go_to_pose_client.send_goal_async(
+                goal
+            )
 
-            goal_handle_pose = goal_future.result()
+            if not self.wait_for_future(goal_future, timeout=10.0):
+                goal_handle.abort()
+                result.success = False
+                result.message = (
+                    f'Timed out starting side {side + 1}.'
+                )
+                return result
+
+            movement_handle = goal_future.result()
+
             if (
-                goal_handle_pose is None
-                or not goal_handle_pose.accepted
+                movement_handle is None
+                or not movement_handle.accepted
             ):
                 goal_handle.abort()
                 result.success = False
-                result.message = f'Failed to start side {side + 1}.'
+                result.message = f'Side {side + 1} was rejected.'
                 return result
 
-            result_future = goal_handle_pose.get_result_async()
-            while rclpy.ok() and not result_future.done():
-                time.sleep(0.05)
+            result_future = movement_handle.get_result_async()
+
+            if not self.wait_for_future(
+                result_future,
+                timeout=45.0
+            ):
+                movement_handle.cancel_goal_async()
+                goal_handle.abort()
+                result.success = False
+                result.message = f'Side {side + 1} timed out.'
+                return result
 
             movement_result = result_future.result()
+
             if (
                 movement_result is None
                 or not movement_result.result.success
             ):
                 goal_handle.abort()
                 result.success = False
-                result.message = f'Failed to complete side {side + 1}.'
+                result.message = (
+                    f'Side {side + 1} failed to complete.'
+                )
                 return result
 
-            current_x = target_x
-            current_y = target_y
-            current_yaw = target_yaw
+            # Verify the actual measured position and orientation.
+            target_pose = Pose()
+            target_pose.x = target_x
+            target_pose.y = target_y
+            target_pose.theta = target_yaw
+
+            measured_pose = self.wait_for_target_pose(
+                target_pose,
+                timeout=3.0
+            )
+
+            if measured_pose is None:
+                goal_handle.abort()
+                result.success = False
+                result.message = (
+                    f'Turtle did not settle at corner {side + 1}.'
+                )
+                return result
 
         result.success = True
         result.message = 'Square drawn successfully.'
         goal_handle.succeed()
+
         self.get_logger().info(result.message)
         return result
-
-    def get_turtle_pose(self):
-        """Subscribe temporarily and return the latest turtle pose."""
-        pose_holder = {'pose': None}
-
-        subscription = self.create_subscription(
-            Pose,
-            '/turtle1/pose',
-            lambda msg: pose_holder.update({'pose': msg}),
-            10,
-            callback_group=self.callback_group
-        )
-
-        deadline = time.monotonic() + 3.0
-        while rclpy.ok() and pose_holder['pose'] is None:
-            if time.monotonic() >= deadline:
-                break
-            time.sleep(0.05)
-
-        self.destroy_subscription(subscription)
-        return pose_holder['pose']
 
 
 def main(args=None):
